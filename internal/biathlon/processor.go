@@ -23,6 +23,7 @@ func NewProcessor(conf Config, events <-chan Event) *Processor {
 		events:      events,
 		competitors: make(map[int]Competitor),
 		fsm:         FSM(),
+		handlers:    make(map[eventType]EventHandler),
 		config:      conf,
 	}
 }
