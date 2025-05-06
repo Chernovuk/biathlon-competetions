@@ -76,6 +76,10 @@ func ParseEvent(eventLine string) (Event, error) {
 		if err != nil {
 			return Event{}, err
 		}
+
+		if target < 1 || target > 5 {
+			return Event{}, fmt.Errorf("Wrong parameter, there're only targets 1 to 5")
+		}
 		event.ExtraParams = append(event.ExtraParams, target)
 	case BeUnableToContinue:
 		comment := rawEvent[3]
