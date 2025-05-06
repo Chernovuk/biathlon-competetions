@@ -115,3 +115,106 @@ func New(c biathlon.Config) *Statistics {
 		penaltyLen:      c.PenaltyLen,
 	}
 }
+
+func (s *Statistics) OnBeSheduled(e biathlon.Event) error {
+	stat := s.competitorsInfo[e.CompetitorID]
+	scheduledStartTime, ok := e.ExtraParams[0].(time.Time)
+	if !ok {
+		return fmt.Errorf("o")
+	}
+	stat.ScheduledStartTime = scheduledStartTime
+
+	s.competitorsInfo[e.CompetitorID] = stat
+	return nil
+}
+
+func (s *Statistics) OnStart(e biathlon.Event) error {
+	stat := s.competitorsInfo[e.CompetitorID]
+	lapInfo := LapInfo{
+		StartTime: e.TimeStamp,
+	}
+	stat.LapsInfo = append(stat.LapsInfo, lapInfo)
+
+	s.competitorsInfo[e.CompetitorID] = stat
+	return nil
+}
+
+func (s *Statistics) OnComeToFiringRange(e biathlon.Event) error {
+	stat := s.competitorsInfo[e.CompetitorID]
+	stat.TotalShots += 5
+
+	s.competitorsInfo[e.CompetitorID] = stat
+	return nil
+}
+
+func (s *Statistics) OnHitTarget(e biathlon.Event) error {
+	stat := s.competitorsInfo[e.CompetitorID]
+	stat.TotalHits++
+
+	s.competitorsInfo[e.CompetitorID] = stat
+	return nil
+}
+
+func (s *Statistics) OnEnterPenaltyLap(e biathlon.Event) error {
+	stat := s.competitorsInfo[e.CompetitorID]
+	penaltyInfo := PenaltyLapInfo{
+		EntryTime: e.TimeStamp,
+	}
+	stat.PenaltiesInfo = append(stat.PenaltiesInfo, penaltyInfo)
+
+	s.competitorsInfo[e.CompetitorID] = stat
+	return nil
+}
+
+func (s *Statistics) OnLeavePenaltyLap(e biathlon.Event) error {
+	stat := s.competitorsInfo[e.CompetitorID]
+
+	currLap := len(stat.PenaltiesInfo) - 1
+	penaltyInfo := stat.PenaltiesInfo[currLap]
+	penaltyInfo.ExitTime = e.TimeStamp
+	penaltyInfo.Duration = penaltyInfo.ExitTime.Sub(penaltyInfo.ExitTime)
+	penaltyInfo.AvgSpeed = s.penaltyLen / penaltyInfo.Duration.Seconds()
+
+	stat.PenaltiesInfo[currLap] = penaltyInfo
+
+	s.competitorsInfo[e.CompetitorID] = stat
+	return nil
+}
+
+func (s *Statistics) OnEndMainLap(e biathlon.Event) error {
+	stat := s.competitorsInfo[e.CompetitorID]
+
+	currLap := len(stat.LapsInfo) - 1
+	lapInfo := stat.LapsInfo[currLap]
+	lapInfo.EndTime = e.TimeStamp
+	lapInfo.Duration = lapInfo.EndTime.Sub(lapInfo.EndTime)
+	lapInfo.AvgSpeed = s.lapLen / lapInfo.Duration.Seconds()
+
+	stat.LapsInfo[currLap] = lapInfo
+
+	if currLap < s.laps {
+		newLapInfo := LapInfo{
+			StartTime: e.TimeStamp,
+		}
+		stat.LapsInfo = append(stat.LapsInfo, newLapInfo)
+	}
+
+	s.competitorsInfo[e.CompetitorID] = stat
+	return nil
+}
+
+func (s *Statistics) OnBeUnableToContinue(e biathlon.Event) error {
+	stat := s.competitorsInfo[e.CompetitorID]
+	stat.NotFinished = true
+
+	s.competitorsInfo[e.CompetitorID] = stat
+	return nil
+}
+
+func (s *Statistics) OnDisqualify(e biathlon.Event) error {
+	stat := s.competitorsInfo[e.CompetitorID]
+	stat.NotStarted = true
+
+	s.competitorsInfo[e.CompetitorID] = stat
+	return nil
+}
