@@ -48,6 +48,7 @@ type Competitor struct {
 	RangeEntryTime     time.Time
 	PenaltyEntryTime   time.Time
 	HitsThisRange      [5]bool
+	VisitedRanges      []bool
 }
 
 type CompetitorState struct {
@@ -55,4 +56,6 @@ type CompetitorState struct {
 	Status             competitorStatus
 	ScheduledStartTime time.Time
 	ActualStartTime    time.Time
+	VisitedRanges      []bool
+	HitsThisRange      [5]bool
 }
