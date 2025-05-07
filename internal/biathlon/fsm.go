@@ -2,49 +2,75 @@ package biathlon
 
 import (
 	"fmt"
+	"slices"
 )
 
-type FiniteStateMachine struct {
-	graph map[competitorStatus]map[eventType]competitorStatus
-}
+type callback func(e Event, c *Competitor) ([]Event, error)
 
 type edge struct {
 	src   competitorStatus
 	dst   competitorStatus
 	event eventType
+	cb    callback
+}
+
+func cmp(a, b edge) int {
+	if a.src < b.src {
+		return -1
+	}
+	if a.src > b.src {
+		return 1
+	}
+
+	if a.event < b.event {
+		return -1
+	}
+	if a.event > b.event {
+		return 1
+	}
+
+	return 0
+}
+
+type FiniteStateMachine struct {
+	graph map[competitorStatus]map[eventType]competitorStatus
+	edges []edge
 }
 
 func makeFSM(edges ...edge) FiniteStateMachine {
-	graph := make(map[competitorStatus]map[eventType]competitorStatus)
+	edgesCopy := make([]edge, len(edges))
+	copy(edgesCopy, edges)
 
-	for _, edge := range edges {
-		if _, ok := graph[edge.src]; !ok {
-			graph[edge.src] = make(map[eventType]competitorStatus)
-		}
-		if _, ok := graph[edge.src][edge.event]; ok {
+	slices.SortFunc(edgesCopy, cmp)
+	for i := 1; i < len(edgesCopy); i++ {
+		if cmp(edges[i-1], edges[i]) == 0 {
 			msg := fmt.Sprintf(
 				"There has already been an edge with src: %v and ev: %v.",
-				edge.src,
-				edge.event,
+				edges[i].src,
+				edges[i].event,
 			)
 			panic(msg)
 		}
-		graph[edge.src][edge.event] = edge.dst
 	}
 
 	return FiniteStateMachine{
-		graph: graph,
+		edges: edgesCopy,
 	}
 }
 
-func (f FiniteStateMachine) LookupPath(src competitorStatus, ev eventType) (competitorStatus, bool) {
-	paths, ok := f.graph[src]
+func (f FiniteStateMachine) LookupPath(
+	src competitorStatus,
+	ev eventType,
+) (competitorStatus, callback, bool) {
+	idx, ok := slices.BinarySearchFunc(f.edges, edge{src: src, event: ev}, cmp)
 	if !ok {
-		return competitorStatus(-1), false
+		return competitorStatus(-1), nil, false
 	}
-	dst, ok := paths[ev]
 
-	return dst, ok
+	dst := f.edges[idx].dst
+	cb := f.edges[idx].cb
+
+	return dst, cb, ok
 }
 
 var fsm = makeFSM(
