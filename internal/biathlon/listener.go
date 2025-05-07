@@ -9,30 +9,36 @@ import (
 type EventListener struct {
 	events chan Event
 	file   *os.File
+
+	log *log.Logger
 }
 
-func NewEventListener(filepath string) (EventListener, error) {
+func NewEventListener(filepath string) (*EventListener, error) {
 	f, err := os.Open(filepath)
 	if err != nil {
-		return EventListener{}, err
+		return &EventListener{}, err
 	}
 
-	return EventListener{
+	return &EventListener{
 		events: make(chan Event),
-		file:   f,
+		file:   f, log: log.New(os.Stdout, "Listener: ", log.Ltime),
 	}, nil
 }
 
-func (l EventListener) Events() <-chan Event {
+func (l *EventListener) Events() <-chan Event {
 	return l.events
 }
 
-func (l EventListener) Start() {
+func (l *EventListener) SetLogger(log *log.Logger) {
+	l.log = log
+}
+
+func (l *EventListener) Start() {
 	scanner := bufio.NewScanner(l.file)
 	for scanner.Scan() {
 		event, err := ParseEvent(scanner.Text())
 		if err != nil {
-			log.Printf("Trash: %v", err)
+			l.log.Println(err)
 		}
 
 		l.events <- event
@@ -40,6 +46,6 @@ func (l EventListener) Start() {
 	close(l.events)
 
 	if err := l.file.Close(); err != nil {
-		log.Fatalf("%v", err)
+		l.log.Fatalln(err)
 	}
 }

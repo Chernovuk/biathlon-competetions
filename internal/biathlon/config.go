@@ -76,8 +76,7 @@ func (d *duration) UnmarshalJSON(b []byte) error {
 	if err != nil {
 		return err
 	}
-	tmp := t.Sub(zeroTime)
-	*d = duration(tmp.Seconds())
+	*d = duration(t.Sub(zeroTime))
 	return nil
 }
 

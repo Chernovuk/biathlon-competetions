@@ -2,82 +2,72 @@ package biathlon
 
 import (
 	"fmt"
+	"slices"
 )
 
-type FiniteStateMachine struct {
-	graph map[competitorStatus]map[eventType]competitorStatus
+type Callback func(e Event, c *CompetitorState) ([]Event, error)
+
+type Edge struct {
+	Src   competitorStatus
+	Dst   competitorStatus
+	Event eventType
+	Cb    Callback
 }
 
-type edge struct {
-	src   competitorStatus
-	dst   competitorStatus
-	event eventType
+func CmpEdges(a, b Edge) int {
+	if a.Src < b.Src {
+		return -1
+	}
+	if a.Src > b.Src {
+		return 1
+	}
+
+	if a.Event < b.Event {
+		return -1
+	}
+	if a.Event > b.Event {
+		return 1
+	}
+
+	return 0
 }
 
-func makeFSM(edges ...edge) FiniteStateMachine {
-	graph := make(map[competitorStatus]map[eventType]competitorStatus)
+type FSM struct {
+	edges []Edge
+}
 
-	for _, edge := range edges {
-		if _, ok := graph[edge.src]; !ok {
-			graph[edge.src] = make(map[eventType]competitorStatus)
-		}
-		if _, ok := graph[edge.src][edge.event]; ok {
+func NewFSM(edges ...Edge) FSM {
+	edgesCopy := make([]Edge, len(edges))
+	copy(edgesCopy, edges)
+
+	slices.SortFunc(edgesCopy, CmpEdges)
+	for i := 1; i < len(edgesCopy); i++ {
+		if CmpEdges(edges[i-1], edges[i]) == 0 {
 			msg := fmt.Sprintf(
 				"There has already been an edge with src: %v and ev: %v.",
-				edge.src,
-				edge.event,
+				edges[i].Src,
+				edges[i].Event,
 			)
 			panic(msg)
 		}
-		graph[edge.src][edge.event] = edge.dst
 	}
 
-	return FiniteStateMachine{
-		graph: graph,
+	return FSM{
+		edges: edgesCopy,
 	}
 }
 
-func (f FiniteStateMachine) LookupPath(src competitorStatus, ev eventType) (competitorStatus, bool) {
-	paths, ok := f.graph[src]
+func (f FSM) LookupPath(
+	src competitorStatus,
+	ev eventType,
+) (competitorStatus, Callback, bool) {
+	idx, ok := slices.BinarySearchFunc(f.edges, Edge{Src: src, Event: ev}, CmpEdges)
 	if !ok {
-		return competitorStatus(-1), false
+		return competitorStatus(-1), nil, false
 	}
-	dst, ok := paths[ev]
 
-	return dst, ok
-}
+	dst := f.edges[idx].Dst
+	cb := f.edges[idx].Cb
 
-var fsm = makeFSM(
-	[]edge{
-		{src: Unknown, dst: Registered, event: Register},
-
-		{src: Registered, dst: Scheduled, event: BeSheduled},
-		{src: Registered, dst: NotStarted, event: Disqualify},
-		{src: Registered, dst: CannotContinue, event: BeUnableToContinue},
-
-		{src: Scheduled, dst: OnStartLine, event: ComeToStartLine},
-		{src: Scheduled, dst: NotStarted, event: Disqualify},
-		{src: Scheduled, dst: CannotContinue, event: BeUnableToContinue},
-
-		{src: OnStartLine, dst: OnMainLap, event: Start},
-		{src: OnStartLine, dst: NotStarted, event: Disqualify},
-		{src: OnStartLine, dst: CannotContinue, event: BeUnableToContinue},
-
-		{src: OnMainLap, dst: OnRange, event: ComeToFiringRange},
-		{src: OnMainLap, dst: OnPenaltyLap, event: EnterPenaltyLap},
-		{src: OnMainLap, dst: OnMainLap, event: EndMainLap},
-		{src: OnMainLap, dst: Finished, event: Finish},
-		{src: OnMainLap, dst: CannotContinue, event: BeUnableToContinue},
-
-		{src: OnRange, dst: OnRange, event: HitTarget},
-		{src: OnRange, dst: OnMainLap, event: LeaveFiringRange},
-		{src: OnRange, dst: CannotContinue, event: BeUnableToContinue},
-
-		{src: OnPenaltyLap, dst: OnMainLap, event: LeavePenaltyLap},
-		{src: OnPenaltyLap, dst: CannotContinue, event: BeUnableToContinue},
-	}...,
-)
-
-func FSM() FiniteStateMachine {
-	return fsm
+	return dst, cb, ok
 }

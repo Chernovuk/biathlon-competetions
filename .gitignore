@@ -6,4 +6,6 @@
 !go.mod
 !go.sum
 
+!makefile
+
 !.gitignore
