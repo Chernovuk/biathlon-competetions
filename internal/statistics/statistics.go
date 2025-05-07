@@ -2,6 +2,7 @@ package statistics
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -23,10 +24,10 @@ type PenaltyLapInfo struct {
 }
 
 type Competitor struct {
-	// CompetitorID  int
-	NotStarted         bool
-	NotFinished        bool
+	ID                 int
+	Status             string
 	ScheduledStartTime time.Time
+	FinishTime         time.Time
 	TotalHits          int
 	TotalShots         int
 	LapsInfo           []LapInfo
@@ -41,30 +42,34 @@ type Statistics struct {
 }
 
 type Result struct {
-	Result          string
-	CompetitorID    int
-	LapsInfo        []LapInfo
-	PenaltyLapsInfo []PenaltyLapInfo
-	TotalHits       int
-	TotalShots      int
+	Result       string
+	CompetitorID int
+	LapsInfo     []struct {
+		duration time.Duration
+		avgSpeed float64
+	}
+	PenaltyLapsInfo []struct {
+		duration time.Duration
+		avgSpeed float64
+	}
+	TotalHits  int
+	TotalShots int
 }
 
 func (r Result) String() string {
 	var sb strings.Builder
 
-	// [Result] CompetitorID
 	sb.WriteString(fmt.Sprintf("[%s] %d ", r.Result, r.CompetitorID))
 
-	// Laps: always bracketed list
 	sb.WriteString("[")
 	for i, lap := range r.LapsInfo {
 		if i > 0 {
 			sb.WriteString(", ")
 		}
-		if lap.Duration > 0 {
+		if lap.duration > 0 {
 			sb.WriteString(fmt.Sprintf("{%s, %.3f}",
-				formatDuration(lap.Duration),
-				lap.AvgSpeed,
+				formatDuration(lap.duration),
+				lap.avgSpeed,
 			))
 		} else {
 			sb.WriteString("{,}")
@@ -78,10 +83,10 @@ func (r Result) String() string {
 			if i > 0 {
 				sb.WriteString(", ")
 			}
-			if pl.Duration > 0 {
+			if pl.duration > 0 {
 				sb.WriteString(fmt.Sprintf("{%s, %.3f}",
-					formatDuration(pl.Duration),
-					pl.AvgSpeed,
+					formatDuration(pl.duration),
+					pl.avgSpeed,
 				))
 			} else {
 				sb.WriteString("{,}")
@@ -95,7 +100,7 @@ func (r Result) String() string {
 	return sb.String()
 }
 
-// formatDuration prints a time.Duration as HH:MM:SS.mmm
+// formatDuration prints a time.Duration as HH:MM:SS.mmm.
 func formatDuration(d time.Duration) string {
 	h := int(d / time.Hour)
 	d -= time.Duration(h) * time.Hour
@@ -114,6 +119,63 @@ func New(c biathlon.Config) *Statistics {
 		lapLen:          c.LapLen,
 		penaltyLen:      c.PenaltyLen,
 	}
+}
+
+func (s *Statistics) GetResults() []Result {
+	resultingTable := make([]Result, 0, len(s.competitorsInfo))
+	for _, competitor := range s.competitorsInfo {
+		res := Result{
+			CompetitorID: competitor.ID,
+			TotalHits:    competitor.TotalHits,
+			TotalShots:   competitor.TotalShots,
+		}
+		for _, lap := range competitor.LapsInfo {
+			v := struct {
+				duration time.Duration
+				avgSpeed float64
+			}{
+				lap.Duration,
+				lap.AvgSpeed,
+			}
+			res.LapsInfo = append(res.LapsInfo, v)
+		}
+		for _, penLap := range competitor.PenaltiesInfo {
+			v := struct {
+				duration time.Duration
+				avgSpeed float64
+			}{
+				penLap.Duration,
+				penLap.AvgSpeed,
+			}
+			res.PenaltyLapsInfo = append(res.PenaltyLapsInfo, v)
+		}
+		if competitor.FinishTime.IsZero() {
+			res.Result = competitor.Status
+		} else {
+			res.Result = formatDuration(competitor.FinishTime.Sub(competitor.LapsInfo[0].StartTime))
+		}
+		resultingTable = append(resultingTable, res)
+	}
+	slices.SortFunc(resultingTable, cmp)
+
+	return resultingTable
+}
+
+func cmp(a, b Result) int {
+	if a.Result < b.Result {
+		return -1
+	} else if a.Result == b.Result {
+		return 0
+	} else {
+		return 1
+	}
+}
+
+func (s *Statistics) OnRegister(e biathlon.Event) {
+	stat := s.competitorsInfo[e.CompetitorID]
+	stat.ID = e.CompetitorID
+
+	s.competitorsInfo[e.CompetitorID] = stat
 }
 
 func (s *Statistics) OnBeSheduled(e biathlon.Event) {
@@ -164,7 +226,7 @@ func (s *Statistics) OnLeavePenaltyLap(e biathlon.Event) {
 	currLap := len(stat.PenaltiesInfo) - 1
 	penaltyInfo := stat.PenaltiesInfo[currLap]
 	penaltyInfo.ExitTime = e.TimeStamp
-	penaltyInfo.Duration = penaltyInfo.ExitTime.Sub(penaltyInfo.ExitTime)
+	penaltyInfo.Duration = penaltyInfo.ExitTime.Sub(penaltyInfo.EntryTime)
 	penaltyInfo.AvgSpeed = s.penaltyLen / penaltyInfo.Duration.Seconds()
 
 	stat.PenaltiesInfo[currLap] = penaltyInfo
@@ -178,12 +240,12 @@ func (s *Statistics) OnEndMainLap(e biathlon.Event) {
 	currLap := len(stat.LapsInfo) - 1
 	lapInfo := stat.LapsInfo[currLap]
 	lapInfo.EndTime = e.TimeStamp
-	lapInfo.Duration = lapInfo.EndTime.Sub(lapInfo.EndTime)
+	lapInfo.Duration = lapInfo.EndTime.Sub(lapInfo.StartTime)
 	lapInfo.AvgSpeed = s.lapLen / lapInfo.Duration.Seconds()
 
 	stat.LapsInfo[currLap] = lapInfo
 
-	if currLap < s.laps {
+	if currLap < s.laps-1 {
 		newLapInfo := LapInfo{
 			StartTime: e.TimeStamp,
 		}
@@ -195,14 +257,26 @@ func (s *Statistics) OnEndMainLap(e biathlon.Event) {
 
 func (s *Statistics) OnBeUnableToContinue(e biathlon.Event) {
 	stat := s.competitorsInfo[e.CompetitorID]
-	stat.NotFinished = true
+	stat.Status = "NotFinished"
 
 	s.competitorsInfo[e.CompetitorID] = stat
 }
 
 func (s *Statistics) OnDisqualify(e biathlon.Event) {
 	stat := s.competitorsInfo[e.CompetitorID]
-	stat.NotStarted = true
+
+	if len(stat.LapsInfo) > 0 {
+		stat.Status = "Disqualified"
+	} else {
+		stat.Status = "NotFinished"
+	}
+
+	s.competitorsInfo[e.CompetitorID] = stat
+}
+
+func (s *Statistics) OnFinish(e biathlon.Event) {
+	stat := s.competitorsInfo[e.CompetitorID]
+	stat.FinishTime = e.TimeStamp
 
 	s.competitorsInfo[e.CompetitorID] = stat
 }
