@@ -116,19 +116,15 @@ func New(c biathlon.Config) *Statistics {
 	}
 }
 
-func (s *Statistics) OnBeSheduled(e biathlon.Event) error {
+func (s *Statistics) OnBeSheduled(e biathlon.Event) {
 	stat := s.competitorsInfo[e.CompetitorID]
-	scheduledStartTime, ok := e.ExtraParams[0].(time.Time)
-	if !ok {
-		return fmt.Errorf("o")
-	}
+	scheduledStartTime := e.ExtraParams[0].(time.Time)
 	stat.ScheduledStartTime = scheduledStartTime
 
 	s.competitorsInfo[e.CompetitorID] = stat
-	return nil
 }
 
-func (s *Statistics) OnStart(e biathlon.Event) error {
+func (s *Statistics) OnStart(e biathlon.Event) {
 	stat := s.competitorsInfo[e.CompetitorID]
 	lapInfo := LapInfo{
 		StartTime: e.TimeStamp,
@@ -136,26 +132,23 @@ func (s *Statistics) OnStart(e biathlon.Event) error {
 	stat.LapsInfo = append(stat.LapsInfo, lapInfo)
 
 	s.competitorsInfo[e.CompetitorID] = stat
-	return nil
 }
 
-func (s *Statistics) OnComeToFiringRange(e biathlon.Event) error {
+func (s *Statistics) OnComeToFiringRange(e biathlon.Event) {
 	stat := s.competitorsInfo[e.CompetitorID]
 	stat.TotalShots += 5
 
 	s.competitorsInfo[e.CompetitorID] = stat
-	return nil
 }
 
-func (s *Statistics) OnHitTarget(e biathlon.Event) error {
+func (s *Statistics) OnHitTarget(e biathlon.Event) {
 	stat := s.competitorsInfo[e.CompetitorID]
 	stat.TotalHits++
 
 	s.competitorsInfo[e.CompetitorID] = stat
-	return nil
 }
 
-func (s *Statistics) OnEnterPenaltyLap(e biathlon.Event) error {
+func (s *Statistics) OnEnterPenaltyLap(e biathlon.Event) {
 	stat := s.competitorsInfo[e.CompetitorID]
 	penaltyInfo := PenaltyLapInfo{
 		EntryTime: e.TimeStamp,
@@ -163,10 +156,9 @@ func (s *Statistics) OnEnterPenaltyLap(e biathlon.Event) error {
 	stat.PenaltiesInfo = append(stat.PenaltiesInfo, penaltyInfo)
 
 	s.competitorsInfo[e.CompetitorID] = stat
-	return nil
 }
 
-func (s *Statistics) OnLeavePenaltyLap(e biathlon.Event) error {
+func (s *Statistics) OnLeavePenaltyLap(e biathlon.Event) {
 	stat := s.competitorsInfo[e.CompetitorID]
 
 	currLap := len(stat.PenaltiesInfo) - 1
@@ -178,10 +170,9 @@ func (s *Statistics) OnLeavePenaltyLap(e biathlon.Event) error {
 	stat.PenaltiesInfo[currLap] = penaltyInfo
 
 	s.competitorsInfo[e.CompetitorID] = stat
-	return nil
 }
 
-func (s *Statistics) OnEndMainLap(e biathlon.Event) error {
+func (s *Statistics) OnEndMainLap(e biathlon.Event) {
 	stat := s.competitorsInfo[e.CompetitorID]
 
 	currLap := len(stat.LapsInfo) - 1
@@ -200,21 +191,18 @@ func (s *Statistics) OnEndMainLap(e biathlon.Event) error {
 	}
 
 	s.competitorsInfo[e.CompetitorID] = stat
-	return nil
 }
 
-func (s *Statistics) OnBeUnableToContinue(e biathlon.Event) error {
+func (s *Statistics) OnBeUnableToContinue(e biathlon.Event) {
 	stat := s.competitorsInfo[e.CompetitorID]
 	stat.NotFinished = true
 
 	s.competitorsInfo[e.CompetitorID] = stat
-	return nil
 }
 
-func (s *Statistics) OnDisqualify(e biathlon.Event) error {
+func (s *Statistics) OnDisqualify(e biathlon.Event) {
 	stat := s.competitorsInfo[e.CompetitorID]
 	stat.NotStarted = true
 
 	s.competitorsInfo[e.CompetitorID] = stat
-	return nil
 }
