@@ -1,6 +1,7 @@
 package biathlon
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -28,6 +29,10 @@ const (
 	Finish     eventType = 33
 )
 
+var ErrWrongEventFormat = errors.New(
+	"wrong event format: [HH:MM:SS.sss] EventID CompetitorID ExtraParams... required",
+)
+
 type Event struct {
 	TimeStamp    time.Time
 	Type         eventType
@@ -37,67 +42,85 @@ type Event struct {
 
 func ParseEvent(eventLine string) (Event, error) {
 	rawEvent := strings.Split(eventLine, " ")
-	// Need to check the len of it
 
-	event := Event{}
+	if len(rawEvent) < 3 {
+		return Event{}, fmt.Errorf(
+			"%d out of at least 3 params are passed: %w",
+			len(rawEvent),
+			ErrWrongEventFormat,
+		)
+	}
+
+	e := Event{}
 	timeStamp, err := parseEventTime(rawEvent[0])
 	if err != nil {
-		return Event{}, err
+		return Event{}, fmt.Errorf("%w: %w", err, ErrWrongEventFormat)
 	}
-	event.TimeStamp = timeStamp
+	e.TimeStamp = timeStamp
 
 	eventID, err := strconv.Atoi(rawEvent[1])
 	if err != nil {
-		return Event{}, err
+		return Event{}, fmt.Errorf("%w: %w", err, ErrWrongEventFormat)
 	}
-	event.Type = eventType(eventID)
+	e.Type = eventType(eventID)
 
 	competitorID, err := strconv.Atoi(rawEvent[2])
 	if err != nil {
-		return Event{}, err
+		return Event{}, fmt.Errorf("%w: %w", err, ErrWrongEventFormat)
 	}
-	event.CompetitorID = competitorID
+	e.CompetitorID = competitorID
 
-	switch event.Type {
+	switch e.Type {
 	case BeSheduled:
+		if len(rawEvent) != 4 {
+			return Event{}, fmt.Errorf("%d event requires 4th param as start time", BeSheduled)
+		}
 		timeStamp, err := parseEventTime(rawEvent[3])
 		if err != nil {
 			return Event{}, err
 		}
-		event.ExtraParams = append(event.ExtraParams, timeStamp)
+		e.ExtraParams = append(e.ExtraParams, timeStamp)
 	case ComeToFiringRange:
+		if len(rawEvent) != 4 {
+			return Event{}, fmt.Errorf(
+				"%d event requires 4th param as range number",
+				ComeToFiringRange,
+			)
+		}
 		firingRange, err := strconv.Atoi(rawEvent[3])
 		if err != nil {
 			return Event{}, err
 		}
-		event.ExtraParams = append(event.ExtraParams, firingRange)
+		e.ExtraParams = append(e.ExtraParams, firingRange)
 	case HitTarget:
+		if len(rawEvent) != 4 {
+			return Event{}, fmt.Errorf("%d event requires 4th param as target", HitTarget)
+		}
 		target, err := strconv.Atoi(rawEvent[3])
 		if err != nil {
 			return Event{}, err
 		}
 
 		if target < 1 || target > 5 {
-			return Event{}, fmt.Errorf("Wrong parameter, there're only targets 1 to 5")
+			return Event{}, fmt.Errorf("wrong parameter, there're only targets 1 to 5")
 		}
-		event.ExtraParams = append(event.ExtraParams, target)
+		e.ExtraParams = append(e.ExtraParams, target)
 	case BeUnableToContinue:
+		if len(rawEvent) != 4 {
+			return Event{}, fmt.Errorf("%d event requires 4th param as comment", BeUnableToContinue)
+		}
 		comment := rawEvent[3]
-		event.ExtraParams = append(event.ExtraParams, comment)
+		e.ExtraParams = append(e.ExtraParams, comment)
 	}
 
-	return event, nil
+	return e, nil
 }
 
 func parseEventTime(rawTime string) (time.Time, error) {
 	trimmedtime := strings.Trim(rawTime, `[]`)
-	if trimmedtime == "" || trimmedtime == "null" {
-		return time.Time{}, fmt.Errorf("wrong time stamp")
-	}
-
 	t, err := time.Parse(time.TimeOnly, trimmedtime)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("wrong formatting of time stamp")
+		return time.Time{}, err
 	}
 	return t, nil
 }
