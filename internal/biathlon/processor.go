@@ -1,11 +1,14 @@
 package biathlon
 
 import (
+	"errors"
 	"log"
 	"time"
 )
 
-type EventHandler func(e Event) error
+var ErrWrongEventsSequence = errors.New("impossible sequence of events")
+
+type EventHandler func(e Event)
 
 type Processor struct {
 	events      <-chan Event
@@ -20,12 +23,152 @@ type Processor struct {
 }
 
 func NewProcessor(conf Config, events <-chan Event) *Processor {
+	fsm = makeFSM(
+		[]edge{
+			{src: Unknown, dst: Registered, event: Register},
+
+			{
+				src:   Registered,
+				dst:   Scheduled,
+				event: BeSheduled,
+				cb: func(e Event, c *Competitor) ([]Event, error) {
+					startTime := e.ExtraParams[0].(time.Time)
+					c.ScheduledStartTime = startTime
+
+					return []Event{}, nil
+				},
+			},
+			{src: Registered, dst: NotStarted, event: Disqualify},
+			{src: Registered, dst: CannotContinue, event: BeUnableToContinue}, // ???
+
+			{
+				src:   Scheduled,
+				dst:   OnStartLine,
+				event: ComeToStartLine,
+				cb: func(e Event, c *Competitor) ([]Event, error) {
+					scheduledTime := c.ScheduledStartTime
+					threshold := scheduledTime.Add(time.Duration(conf.StartDelta))
+					if e.TimeStamp.After(threshold) {
+						disqualify := Event{
+							TimeStamp: e.TimeStamp, Type: Disqualify, CompetitorID: e.CompetitorID,
+						}
+						return []Event{disqualify}, nil
+					}
+
+					return []Event{}, nil
+				},
+			},
+			{src: Scheduled, dst: NotStarted, event: Disqualify},
+			{src: Scheduled, dst: CannotContinue, event: BeUnableToContinue}, // ???
+
+			{
+				src:   OnStartLine,
+				dst:   OnMainLap,
+				event: Start,
+				cb: func(e Event, c *Competitor) ([]Event, error) {
+					scheduledTime := c.ScheduledStartTime
+					threshold := scheduledTime.Add(time.Duration(conf.StartDelta))
+					if e.TimeStamp.After(threshold) {
+						disqualify := Event{
+							TimeStamp: e.TimeStamp, Type: Disqualify, CompetitorID: e.CompetitorID,
+						}
+						return []Event{disqualify}, nil
+					} else {
+						c.ActualStartTime = e.TimeStamp
+						c.CurrentLap = 1
+					}
+
+					return []Event{}, nil
+				},
+			},
+			{src: OnStartLine, dst: NotStarted, event: Disqualify},
+			{src: OnStartLine, dst: CannotContinue, event: BeUnableToContinue}, // ???
+
+			{
+				src:   OnMainLap,
+				dst:   OnRange,
+				event: ComeToFiringRange,
+				cb: func(e Event, c *Competitor) ([]Event, error) {
+					firingRange := e.ExtraParams[0].(int)
+					if c.VisitedRanges[firingRange-1] {
+						disqualify := Event{
+							TimeStamp: e.TimeStamp, Type: Disqualify, CompetitorID: e.CompetitorID,
+						}
+						return []Event{disqualify}, nil
+					} else {
+						c.VisitedRanges[firingRange-1] = true
+					}
+
+					return []Event{}, nil
+				},
+			},
+			{src: OnMainLap, dst: OnPenaltyLap, event: EnterPenaltyLap},
+			{
+				src:   OnMainLap,
+				dst:   OnMainLap,
+				event: EndMainLap,
+				cb: func(e Event, c *Competitor) ([]Event, error) {
+					if c.CurrentLap < conf.Laps {
+						c.CurrentLap++
+					} else {
+						finish := Event{TimeStamp: e.TimeStamp, Type: Finish, CompetitorID: e.CompetitorID}
+						return []Event{finish}, nil
+					}
+
+					return []Event{}, nil
+				},
+			},
+			{
+				src:   OnMainLap,
+				dst:   Finished,
+				event: Finish,
+				cb: func(e Event, c *Competitor) ([]Event, error) {
+					for _, visited := range c.VisitedRanges {
+						if !visited {
+							disqualify := Event{
+								TimeStamp: e.TimeStamp, Type: Disqualify, CompetitorID: e.CompetitorID,
+							}
+							return []Event{disqualify}, nil
+						}
+					}
+					return []Event{}, nil
+				},
+			},
+			{src: OnMainLap, dst: Disqualified, event: Disqualify},
+			{src: OnMainLap, dst: CannotContinue, event: BeUnableToContinue}, // ???
+
+			{
+				src:   OnRange,
+				dst:   OnRange,
+				event: HitTarget,
+				cb: func(e Event, c *Competitor) ([]Event, error) {
+					target := e.ExtraParams[0].(int)
+					if c.HitsThisRange[target-1] {
+						return []Event{}, ErrWrongEventsSequence
+					} else {
+						c.HitsThisRange[target-1] = true
+					}
+
+					return []Event{}, nil
+				},
+			},
+			{src: OnRange, dst: OnMainLap, event: LeaveFiringRange},
+			{src: OnRange, dst: Disqualified, event: Disqualify},
+			{src: OnRange, dst: CannotContinue, event: BeUnableToContinue}, // ???
+
+			{src: OnPenaltyLap, dst: OnMainLap, event: LeavePenaltyLap},
+			{src: OnPenaltyLap, dst: CannotContinue, event: BeUnableToContinue}, // ???
+
+			{src: Finished, dst: Disqualified, event: Disqualify},
+		}...,
+	)
+
 	return &Processor{
 		events:      events,
 		competitors: make(map[int]Competitor),
-		fsm:         FSM(),
-		handlers:    make(map[eventType]EventHandler),
+		fsm:         fsm,
 		config:      conf,
+		handlers:    make(map[eventType]EventHandler),
 	}
 }
 
@@ -39,8 +182,13 @@ func (p *Processor) Start() {
 			p.eventsQueue = append(p.eventsQueue, e)
 		}
 		e := p.eventsQueue[0]
-		logEvent(e)
-		p.processEvent(e)
+		err := p.processEvent(e)
+		if err != nil {
+			log.Printf("%v", err.Error())
+		} else {
+			logEvent(e)
+		}
+
 		p.eventsQueue = p.eventsQueue[1:]
 	}
 }
@@ -52,51 +200,32 @@ func (p *Processor) Handle(e eventType, handler EventHandler) {
 	p.handlers[e] = handler
 }
 
-func (p *Processor) processEvent(e Event) {
+func (p *Processor) processEvent(e Event) error {
 	cID := e.CompetitorID
 	competitor := p.competitors[cID]
 
-	status, ok := p.fsm.LookupPath(competitor.Status, e.Type)
+	status, cb, ok := p.fsm.LookupPath(competitor.Status, e.Type)
 	if !ok {
-		// panic("aaaaaa")
-		return
+		return ErrWrongEventsSequence
 	}
 
-	switch e.Type {
-	case BeSheduled:
-		startTime := e.ExtraParams[0].(time.Time)
-		competitor.ScheduledStartTime = startTime
-	case Start:
-		competitor.ActualStartTime = e.TimeStamp
-
-		start := competitor.ActualStartTime
-		threshold := competitor.ScheduledStartTime.Add(time.Duration(p.config.StartDelta))
-
-		if start.Before(threshold) {
-			competitor.CurrentLap = 1
-		} else {
-			disqualify := Event{TimeStamp: e.TimeStamp, Type: Disqualify, CompetitorID: cID}
-			p.eventsQueue = append(p.eventsQueue, disqualify)
+	if cb != nil {
+		generatedEvents, err := cb(e, &competitor)
+		if err != nil {
+			return err
 		}
-	case EndMainLap:
-		if competitor.CurrentLap < p.config.Laps {
-			competitor.CurrentLap++
-		} else {
-			finish := Event{TimeStamp: e.TimeStamp, Type: Finish, CompetitorID: cID}
-			p.eventsQueue = append(p.eventsQueue, finish)
-		}
+		p.eventsQueue = append(p.eventsQueue, generatedEvents...)
 	}
+
+	competitor.Status = status
 
 	handler, ok := p.handlers[e.Type]
 	if ok {
-		var err error
-		err = handler(e)
-		if err != nil {
-		}
+		handler(e)
 	}
-	competitor.Status = status
 
 	p.competitors[cID] = competitor
+	return nil
 }
 
 func logEvent(e Event) {
