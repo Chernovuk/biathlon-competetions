@@ -100,10 +100,6 @@ func ParseEvent(eventLine string) (Event, error) {
 		if err != nil {
 			return Event{}, err
 		}
-
-		if target < 1 || target > 5 {
-			return Event{}, fmt.Errorf("wrong parameter, there're only targets 1 to 5")
-		}
 		e.ExtraParams = append(e.ExtraParams, target)
 	case BeUnableToContinue:
 		if len(rawEvent) != 4 {
