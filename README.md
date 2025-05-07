@@ -1,5 +1,22 @@
 # biathlon-competetions
-Test task for Yadro Impulse 2025
+Test task for Yadro Impulse 2025.
+
+To use this program you need to specify 2 parameters after its name: path to file with events and path to config file:
+
+``` bash
+biathlon EVENTS_FILEPATH CONFIG_FILEPATH
+```
+
+I'm assuming that all competitors shoot exactly 5 times after entering firing range and that firingLines variable inside of config file is a number of firing ranges which competitor should visit during the race. So, for example, if laps = 5, firingLines = 3, competitor can visit firing range on laps #1, #3, #4. Or in any other subset of 1:5 with the len = 3.
+If competitor doesn't visit necessary amount of firing lines or visits the same one more than once, I consider him disqualified (state I expanded beyond NotStarted terminology as I consider it appropriate to do so).
+All strange or impossible permutations of sequences of events are considered incorrect and are not allowed by finite state machine and are logged as such.
+
+Makefile is provided for automating building, running and formatting of the program. More detailed information can be accessed by
+``` bash
+make help
+```
+
+By default events logs made by processor are located in the processor.log file and logs made by listener in the listener.log file. Resulting table is outputted to the os.Stdout.
 
 # System prototype for biathlon competitions
 The prototype must be able to work with a configuration file and a set of external events of a certain format.
