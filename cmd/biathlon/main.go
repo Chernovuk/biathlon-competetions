@@ -31,6 +31,7 @@ func main() {
 	stats := statistics.New(config)
 	processor := biathlon.NewProcessor(config, listener.Events())
 
+	processor.Handle(biathlon.Register, stats.OnRegister)
 	processor.Handle(biathlon.BeSheduled, stats.OnBeSheduled)
 	processor.Handle(biathlon.Start, stats.OnStart)
 	processor.Handle(biathlon.HitTarget, stats.OnHitTarget)
@@ -40,7 +41,14 @@ func main() {
 	processor.Handle(biathlon.EndMainLap, stats.OnEndMainLap)
 	processor.Handle(biathlon.BeUnableToContinue, stats.OnBeUnableToContinue)
 	processor.Handle(biathlon.Disqualify, stats.OnDisqualify)
+	processor.Handle(biathlon.Finish, stats.OnFinish)
 
 	go listener.Start()
 	processor.Start()
+
+	fmt.Println()
+	table := stats.GetResults()
+	for _, v := range table {
+		fmt.Println(v.String())
+	}
 }
