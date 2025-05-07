@@ -206,7 +206,7 @@ func initBiathlonFSM(conf Config) FSM {
 				Cb: func(e Event, c *CompetitorState) ([]Event, error) {
 					firingRange := e.ExtraParams[0].(int)
 					if firingRange < 1 || firingRange > conf.FiringLines {
-						return []Event{}, ErrInvalisParamValue
+						return []Event{}, ErrInvalidParamValue
 					}
 					if c.VisitedRanges[firingRange-1] {
 						disqualify := Event{
@@ -263,7 +263,7 @@ func initBiathlonFSM(conf Config) FSM {
 				Cb: func(e Event, c *CompetitorState) ([]Event, error) {
 					target := e.ExtraParams[0].(int)
 					if target < 1 || target > 5 {
-						return []Event{}, ErrInvalisParamValue
+						return []Event{}, ErrInvalidParamValue
 					}
 					if c.HitsThisRange[target-1] {
 						return []Event{}, ErrWrongEventsSequence
