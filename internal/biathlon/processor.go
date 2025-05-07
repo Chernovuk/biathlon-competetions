@@ -25,7 +25,14 @@ type Processor struct {
 func NewProcessor(conf Config, events <-chan Event) *Processor {
 	fsm = makeFSM(
 		[]edge{
-			{src: Unknown, dst: Registered, event: Register},
+			{
+				src: Unknown,
+				dst: Registered, event: Register,
+				cb: func(_ Event, c *Competitor) ([]Event, error) {
+					c.VisitedRanges = make([]bool, conf.FiringLines)
+					return []Event{}, nil
+				},
+			},
 
 			{
 				src:   Registered,
@@ -110,6 +117,7 @@ func NewProcessor(conf Config, events <-chan Event) *Processor {
 				cb: func(e Event, c *Competitor) ([]Event, error) {
 					if c.CurrentLap < conf.Laps {
 						c.CurrentLap++
+						c.HitsThisRange = [5]bool{}
 					} else {
 						finish := Event{TimeStamp: e.TimeStamp, Type: Finish, CompetitorID: e.CompetitorID}
 						return []Event{finish}, nil
