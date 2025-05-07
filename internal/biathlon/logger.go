@@ -23,10 +23,10 @@ func NewDefaultLogger(out io.Writer) *DefaultLogger {
 
 func (l *DefaultLogger) Error(time time.Time, err error) {
 	ts := time.Format("15:04:05.000")
-	msg := fmt.Sprintf("[%s] %s", ts, err.Error())
+	msg := fmt.Sprintf("[%s] %s\n", ts, err.Error())
 
 	if _, err := l.out.Write([]byte(msg)); err != nil {
-		fmt.Printf("Logger error: %s", err.Error())
+		fmt.Printf("Logger error: %s\n", err.Error())
 	}
 }
 
@@ -34,7 +34,7 @@ func (l *DefaultLogger) Event(e Event) {
 	msg := l.msgFromEvent(e)
 
 	if _, err := l.out.Write([]byte(msg)); err != nil {
-		fmt.Printf("Logger error: %s", err.Error())
+		fmt.Printf("Logger error: %s\n", err.Error())
 	}
 }
 
