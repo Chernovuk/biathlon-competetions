@@ -6,7 +6,10 @@ import (
 	"time"
 )
 
-var ErrWrongEventsSequence = errors.New("impossible sequence of events")
+var (
+	ErrWrongEventsSequence = errors.New("impossible sequence of events")
+	ErrInvalidParamValue   = errors.New("invalid parameter value")
+)
 
 type EventHandler func(e Event)
 
@@ -102,7 +105,7 @@ func (p *Processor) processEvent(e Event) error {
 func (p *Processor) finalize(lastTime time.Time) {
 	for cID, c := range p.competitors {
 		status, cb, ok := p.fsm.LookupPath(c.Status, Disqualify)
-		if !ok {
+		if !ok || c.Status == Finished {
 			continue
 		}
 
@@ -111,6 +114,7 @@ func (p *Processor) finalize(lastTime time.Time) {
 			_, err := cb(disqualify, &c)
 			if err != nil {
 				p.log.Error(lastTime, err)
+				continue
 			}
 		}
 		c.Status = status
@@ -121,6 +125,8 @@ func (p *Processor) finalize(lastTime time.Time) {
 		}
 
 		p.log.Event(disqualify)
+
+		p.competitors[cID] = c
 	}
 }
 
@@ -199,6 +205,9 @@ func initBiathlonFSM(conf Config) FSM {
 				Event: ComeToFiringRange,
 				Cb: func(e Event, c *CompetitorState) ([]Event, error) {
 					firingRange := e.ExtraParams[0].(int)
+					if firingRange < 1 || firingRange > conf.FiringLines {
+						return []Event{}, ErrInvalisParamValue
+					}
 					if c.VisitedRanges[firingRange-1] {
 						disqualify := Event{
 							TimeStamp: e.TimeStamp, Type: Disqualify, CompetitorID: e.CompetitorID,
@@ -253,6 +262,9 @@ func initBiathlonFSM(conf Config) FSM {
 				Event: HitTarget,
 				Cb: func(e Event, c *CompetitorState) ([]Event, error) {
 					target := e.ExtraParams[0].(int)
+					if target < 1 || target > 5 {
+						return []Event{}, ErrInvalisParamValue
+					}
 					if c.HitsThisRange[target-1] {
 						return []Event{}, ErrWrongEventsSequence
 					} else {
